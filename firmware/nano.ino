@@ -1,8 +1,10 @@
 #include <Wire.h> 
 #include <LiquidCrystal_I2C.h>
+#include "dht.h"
 
+dht DHT;
 
-
+#define DHT11PIN 2
 #define BACKLIGHT_PIN     13
 
 LiquidCrystal_I2C lcd(0x38, 2, 1, 0, 4,5,6,7,3,POSITIVE);  // Set the LCD I2C address
@@ -25,6 +27,12 @@ const uint8_t charBitmap[][8] = {
 
 void setup()
 {
+  Serial.begin(9600);
+  Serial.println("DHT11 TEST PROGRAM ");
+  Serial.print("LIBRARY VERSION: ");
+  Serial.println(DHT_LIB_VERSION);
+  Serial.println();
+  
    int charBitmapSize = (sizeof(charBitmap ) / sizeof (charBitmap[0]));
 
   // Switch on the backlight
@@ -58,4 +66,31 @@ void loop()
       lcd.setCursor ( 0, 1 );
    }
    delay (200);
+
+   Serial.println("\n");
+
+  int chk = DHT.read11(DHT11PIN);
+
+  Serial.print("Read sensor: ");
+  switch (chk)
+  {
+    case DHTLIB_OK: 
+   Serial.println("OK"); 
+    break;
+    case DHTLIB_ERROR_CHECKSUM: 
+    Serial.println("Checksum error"); 
+    break;
+    case DHTLIB_ERROR_TIMEOUT: 
+    Serial.println("Time out error"); 
+    break;
+    default: 
+    Serial.println("Unknown error"); 
+    break;
+  }
+
+  Serial.print("Humidity (%): ");
+  Serial.println((float)DHT.humidity, 2);
+
+  Serial.print("Temperature (°C): ");
+  Serial.println((float)DHT.temperature, 2);
 }
