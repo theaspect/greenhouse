@@ -10,6 +10,15 @@
 #define DHT11PIN 2
 #define BACKLIGHT_PIN 13
 
+#define DEBUG
+#ifdef DEBUG
+  #define LOGLN(x) Serial.println(x)
+  #define LOG(x)   Serial.print(x)
+#else
+  #define LOGLN(x)
+  #define LOG(x)
+#endif
+
 // Emulate Serial1 on pins 10/11 if HW is not present (use interrupt pins for better performance)
 #ifndef HAVE_HWSERIAL1
 #include "SoftwareSerial.h"
@@ -62,20 +71,20 @@ void print_lcd(){
 void read_sensors(){
   int chk = DHT.read11(DHT11PIN);
 
-  Serial.print("Read sensor: ");
+  LOGLN("Read sensor: ");
   switch (chk)
   {
     case DHTLIB_OK: 
-   Serial.println("OK"); 
+    LOGLN("OK"); 
     break;
     case DHTLIB_ERROR_CHECKSUM: 
-    Serial.println("Checksum error"); 
+    LOGLN("Checksum error"); 
     break;
     case DHTLIB_ERROR_TIMEOUT: 
-    Serial.println("Time out error"); 
+    LOGLN("Time out error"); 
     break;
     default: 
-    Serial.println("Unknown error");
+    LOGLN("Unknown error");
     //delay(10);
     break;
   }
@@ -83,61 +92,61 @@ void read_sensors(){
   humidity=(int) DHT.humidity;
   temperature=(int) DHT.temperature;
 
-  Serial.print("Humidity (%): ");
-  Serial.println(humidity);
+  LOG("Humidity (%): ");
+  LOGLN(humidity);
 
-  Serial.print("Temperature (°C): ");
-  Serial.println(temperature);
+  LOG("Temperature (°C): ");
+  LOGLN(temperature);
 
   moisture = map(analogRead(MOISTURE), 0, 1023, 99, 0);
-  Serial.print("Moisture (%): ");
-  Serial.println(moisture);
+  LOG("Moisture (%): ");
+  LOGLN(moisture);
 }
 
 void reset() {
   SerialWiFi.println("AT+RST");
-  Serial.println("AT+RST");
+  LOGLN("AT+RST");
   delay(1000);
   if(SerialWiFi.find("OK")){
-    Serial.println("Module Reset"); 
+    LOGLN("Module Reset"); 
   }else{
-    Serial.println("Failde to reset"); 
+    LOGLN("Failde to reset"); 
   }
 }
 
 void connectWifi() {
   String cmdm = "AT+CWMOD=1";
-  Serial.println(cmdm);
+  LOGLN(cmdm);
   SerialWiFi.println(cmdm);
   delay(100);
   if(SerialWiFi.find("OK")) {
-    Serial.println("Mod changed");
+    LOGLN("Mod changed");
   } else {
-    Serial.println("Cannot change mod");
+    LOGLN("Cannot change mod");
   }
   
   String cmd = "AT+CWJAP=\"" + String(WIFI_SSID)+"\",\"" + String(WIFI_PASSWORD) + "\"";
-  Serial.println(cmd);
+  LOGLN(cmd);
   SerialWiFi.println(cmd);
 
   delay(4000);
 
   if(SerialWiFi.find("OK")) {
-    Serial.println("Connected!");
+    LOGLN("Connected!");
   } else {
-    Serial.println("Cannot connect to wifi");
+    LOGLN("Cannot connect to wifi");
     connectWifi();
   }
 }
 
 void http (String url) {
   String connect = "AT+CIPSTART=\"TCP\",\"" + String(IP) + "\"," + String(PORT);
-  Serial.println(connect);
+  LOGLN(connect);
   SerialWiFi.println(connect);//start a TCP connection.
   if( SerialWiFi.find("OK")) {
-    Serial.println("TCP connection ready");
+    LOGLN("TCP connection ready");
   }else{
-    Serial.println("Cannot connect");
+    LOGLN("Cannot connect");
   }
 
   delay(100);
@@ -150,47 +159,49 @@ void http (String url) {
 
   String sendCmd = "AT+CIPSEND="+String(getRequest.length());//determine the number of caracters to be sent.
   
-  Serial.println(sendCmd);
+  LOGLN(sendCmd);
   SerialWiFi.println(sendCmd);
 
   delay(500);
   if(SerialWiFi.find(">")) { 
-    Serial.println("Sending..");
+    LOGLN("Sending..");
     SerialWiFi.print(getRequest);
   }else{
-    Serial.println("Failed to start");
+    LOGLN("Failed to start");
   }
 
   delay(100);
   if(SerialWiFi.find("SEND OK")) {
-    Serial.println("Packet sent");
+    LOGLN("Packet sent");
   }else{
-    Serial.println("Failed to send");
+    LOGLN("Failed to send");
   }
 
   read();
   
   // close the connection
   SerialWiFi.println("AT+CIPCLOSE");
-  Serial.println("AT+CIPCLOSE");
+  LOGLN("AT+CIPCLOSE");
   delay(100);
   if(SerialWiFi.find("ERROR")) {
-    Serial.println("Closed");
+    LOGLN("Closed");
   }else{
-    Serial.println("Failed to close");
+    LOGLN("Failed to close");
   }
 }
 
 void read(){
   while (SerialWiFi.available()) {
     String tmpResp = SerialWiFi.readString();
-    Serial.println(tmpResp);
+    LOGLN(tmpResp);
   }
 }
 
 void setup()
 {
-  Serial.begin(BAUD);
+  if(Serial){
+    Serial.begin(BAUD);
+  }
   /* Notice: initialize serial for ESP8266 at your ESP8266 baud rate
    * You can change the baud rate of ESP8266 sending a command like "AT+UART_DEF=9600,8,1,0,0\r\n"
    * Test with different rates, and use the higher one that works with your setup.
