@@ -1,8 +1,7 @@
 #include <LiquidCrystal_I2C.h>
 #include <dht.h>
-
-#define _ESPLOGLEVEL_ 4
-#include "WiFiEsp.h"
+#include <ESP8266WiFi.h>
+#include <ESP8266HTTPClient.h>
 
 #define BAUD 38400
 
@@ -23,17 +22,10 @@ dht DHT;
 LiquidCrystal_I2C lcd(0x38,2,1,0,4,5,6,7,3,POSITIVE);  // Set the LCD I2C address
 int status = WL_IDLE_STATUS;
 IPAddress ip(192,168,1,101);
-uint16_t port = 8080;
-
 String ip_string = String(ip[0]) + '.' + String(ip[1]) + '.' + String(ip[2]) + '.' + String(ip[3]);
 
 unsigned long lastConnectionTime = 0;         // last time you connected to the server, in milliseconds
 const unsigned long postingInterval = 10000L; // delay between updates, in milliseconds
-
-// Initialize the Ethernet client object
-WiFiEspClient client;
-
-uint8_t data[256];
 
 int temperature = 99;
 int humidity = 99;
@@ -110,7 +102,7 @@ void setup()
   SerialWiFi.begin(BAUD);
 
   // initialize ESP module
-  WiFi.init(&SerialWiFi);
+  WiFi.begin(&SerialWiFi);
 
   // check for the presence of the shield
   if (WiFi.status() == WL_NO_SHIELD) {
@@ -152,10 +144,10 @@ void loop()
   // if 10 seconds have passed since your last connection,
   // then connect again and send data
   if (millis() - lastConnectionTime > postingInterval) {
+    httpRequest();
+  }else{
     read_sensors();
     print_lcd();
-  
-    httpRequest();
   }
 
   delay(1000);
@@ -163,34 +155,56 @@ void loop()
 
 // this method makes a HTTP connection to the server
 void httpRequest() {
+  Serial.println();
+    
   // close any connection before send a new request
   // this will free the socket on the WiFi shield
   client.stop();
-  client.flush();
 
   // if there's a successful connection
-  if (client.connect(ip, port)) {
+  if (client.connect(ip, 8080)) {
+    Serial.println("Connecting...");
+
+    Serial.print(F("GET /log"));
+    Serial.print(F("?moisture="));
+    Serial.print(moisture);
+    Serial.print(F("&humidity="));
+    Serial.print(humidity);
+    Serial.print(F("?temperature="));
+    Serial.print(temperature);
+    Serial.println(F(" HTTP/1.1"));
+
+    Serial.print(F("Host: "));
+    Serial.print(ip_string);
+    Serial.println();
+
+    Serial.println("Connection: close");
+
+    Serial.println();
+    
     // send the HTTP GET request
+    client.print(F("GET /log"));
+    client.print(F("?moisture="));
+    client.print(moisture);
+    client.print(F("&humidity="));
+    client.print(humidity);
+    client.print(F("&temperature="));
+    client.print(temperature);
+    client.println(F(" HTTP/1.1"));
 
-    sprintf(data, 
-      "GET /log?moisture=%d&humidity=%d&temperature=%d HTTP/1.1\r\nHost: %d.%d.%d.%d\r\nConnection: close\r\n\r\n",
-      moisture,humidity,temperature,ip[0],ip[1],ip[2],ip[3]);
-    int len = strlen(data);
+    client.print(F("Host: "));
+    client.print(ip_string);
+    client.println();
 
-    Serial.print("SENDING ");
-    Serial.print(len);
-    Serial.print(" :");
-    Serial.write(data, len);
-    client.write(data, len);
-    Serial.println("READING");
-    client.read();
+    client.println("Connection: close");
 
-//    delay(100);
-//
-//    while (client.available()) {
-//      char c = client.read();
-//      Serial.write(c);
-//    }
+    client.println();
+
+    delay(100);
+    while (client.available()) {
+      char c = client.read();
+      Serial.write(c);
+    }
 
     // note the time that the connection was made
     lastConnectionTime = millis();
