@@ -1,9 +1,10 @@
 #include <Wire.h> 
 #include <LiquidCrystal_I2C.h>
-#include "dht.h"
+#include <dht.h>
 
 dht DHT;
 
+#define MOISTURE 0
 #define DHT11PIN 2
 #define BACKLIGHT_PIN     13
 
@@ -93,4 +94,9 @@ void loop()
 
   Serial.print("Temperature (°C): ");
   Serial.println((float)DHT.temperature, 2);
+
+  int moisture = map(analogRead(MOISTURE), 0, 1023, 99, 0);
+  Serial.print("Moisture (%): ");
+  Serial.println(moisture);
+  
 }
