@@ -1,7 +1,5 @@
 #include <LiquidCrystal_I2C.h>
 #include <dht.h>
-#include <ESP8266WiFi.h>
-#include <ESP8266HTTPClient.h>
 
 #define BAUD 38400
 
@@ -20,12 +18,16 @@ SoftwareSerial SerialWiFi(10,11); // RX, TX
 
 dht DHT;
 LiquidCrystal_I2C lcd(0x38,2,1,0,4,5,6,7,3,POSITIVE);  // Set the LCD I2C address
-int status = WL_IDLE_STATUS;
-IPAddress ip(192,168,1,101);
-String ip_string = String(ip[0]) + '.' + String(ip[1]) + '.' + String(ip[2]) + '.' + String(ip[3]);
 
+#define IP "192.168.1.101"
+#define PORT 8080
+
+unsigned long lastResetTime = 0;
+const unsigned long resetInterval = 60000L;
 unsigned long lastConnectionTime = 0;         // last time you connected to the server, in milliseconds
 const unsigned long postingInterval = 10000L; // delay between updates, in milliseconds
+
+uint8_t data[256];
 
 int temperature = 99;
 int humidity = 99;
@@ -92,6 +94,100 @@ void read_sensors(){
   Serial.println(moisture);
 }
 
+void reset() {
+  SerialWiFi.println("AT+RST");
+  Serial.println("AT+RST");
+  delay(1000);
+  if(SerialWiFi.find("OK")){
+    Serial.println("Module Reset"); 
+  }else{
+    Serial.println("Failde to reset"); 
+  }
+}
+
+void connectWifi() {
+  String cmdm = "AT+CWMOD=1";
+  Serial.println(cmdm);
+  SerialWiFi.println(cmdm);
+  delay(100);
+  if(SerialWiFi.find("OK")) {
+    Serial.println("Mod changed");
+  } else {
+    Serial.println("Cannot change mod");
+  }
+  
+  String cmd = "AT+CWJAP=\"" + String(WIFI_SSID)+"\",\"" + String(WIFI_PASSWORD) + "\"";
+  Serial.println(cmd);
+  SerialWiFi.println(cmd);
+
+  delay(4000);
+
+  if(SerialWiFi.find("OK")) {
+    Serial.println("Connected!");
+  } else {
+    Serial.println("Cannot connect to wifi");
+    connectWifi();
+  }
+}
+
+void http (String url) {
+  String connect = "AT+CIPSTART=\"TCP\",\"" + String(IP) + "\"," + String(PORT);
+  Serial.println(connect);
+  SerialWiFi.println(connect);//start a TCP connection.
+  if( SerialWiFi.find("OK")) {
+    Serial.println("TCP connection ready");
+  }else{
+    Serial.println("Cannot connect");
+  }
+
+  delay(100);
+
+  String getRequest =
+    "GET " + url + " HTTP/1.1\r\n" +
+    "Host: " + IP + "\r\n" +
+    "Connection: close" +
+    "\r\n\r\n";
+
+  String sendCmd = "AT+CIPSEND="+String(getRequest.length());//determine the number of caracters to be sent.
+  
+  Serial.println(sendCmd);
+  SerialWiFi.println(sendCmd);
+
+  delay(500);
+  if(SerialWiFi.find(">")) { 
+    Serial.println("Sending..");
+    SerialWiFi.print(getRequest);
+  }else{
+    Serial.println("Failed to start");
+  }
+
+  delay(100);
+  if(SerialWiFi.find("SEND OK")) {
+    Serial.println("Packet sent");
+  }else{
+    Serial.println("Failed to send");
+  }
+
+  read();
+  
+  // close the connection
+  SerialWiFi.println("AT+CIPCLOSE");
+  Serial.println("AT+CIPCLOSE");
+  delay(100);
+  if(SerialWiFi.find("ERROR")) {
+    Serial.println("Closed");
+  }else{
+    Serial.println("Failed to close");
+  }
+}
+
+void read(){
+  while (SerialWiFi.available()) {
+    String tmpResp = SerialWiFi.readString();
+    Serial.println(tmpResp);
+  }
+}
+
 void setup()
 {
   Serial.begin(BAUD);
@@ -100,29 +196,7 @@ void setup()
    * Test with different rates, and use the higher one that works with your setup.
    */
   SerialWiFi.begin(BAUD);
-
-  // initialize ESP module
-  WiFi.begin(&SerialWiFi);
-
-  // check for the presence of the shield
-  if (WiFi.status() == WL_NO_SHIELD) {
-    Serial.println("WiFi shield not present");
-    // don't continue
-    while (true);
-  }
-
-  // attempt to connect to WiFi network
-  while ( status != WL_CONNECTED) {
-    Serial.print("Attempting to connect to WPA SSID: ");
-    Serial.println(WIFI_SSID);
-    // Connect to WPA/WPA2 network
-    status = WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  }
-
-  Serial.println("You're connected to the network");
   
-  printWifiStatus();
-
   lcd.begin(16,2);               // initialize the lcd 
 
   lcd.home();                   // go home
@@ -134,102 +208,21 @@ void setup()
 
 void loop()
 {
-  // if there's incoming data from the net connection send it out the serial port
-  // this is for debugging purposes only
-  while (client.available()) {
-    char c = client.read();
-    Serial.write(c);
+  if (millis() - lastResetTime > resetInterval) {
+      reset();
+      connectWifi();
+      lastResetTime = millis();
   }
 
   // if 10 seconds have passed since your last connection,
   // then connect again and send data
   if (millis() - lastConnectionTime > postingInterval) {
-    httpRequest();
-  }else{
     read_sensors();
     print_lcd();
-  }
 
+    String url = "/log?moisture="+String(moisture)+"&humidity="+String(humidity)+"&temperature="+String(temperature);
+    http(url);
+    lastConnectionTime = millis();
+  }
   delay(1000);
 }
-
-// this method makes a HTTP connection to the server
-void httpRequest() {
-  Serial.println();
-    
-  // close any connection before send a new request
-  // this will free the socket on the WiFi shield
-  client.stop();
-
-  // if there's a successful connection
-  if (client.connect(ip, 8080)) {
-    Serial.println("Connecting...");
-
-    Serial.print(F("GET /log"));
-    Serial.print(F("?moisture="));
-    Serial.print(moisture);
-    Serial.print(F("&humidity="));
-    Serial.print(humidity);
-    Serial.print(F("?temperature="));
-    Serial.print(temperature);
-    Serial.println(F(" HTTP/1.1"));
-
-    Serial.print(F("Host: "));
-    Serial.print(ip_string);
-    Serial.println();
-
-    Serial.println("Connection: close");
-
-    Serial.println();
-    
-    // send the HTTP GET request
-    client.print(F("GET /log"));
-    client.print(F("?moisture="));
-    client.print(moisture);
-    client.print(F("&humidity="));
-    client.print(humidity);
-    client.print(F("&temperature="));
-    client.print(temperature);
-    client.println(F(" HTTP/1.1"));
-
-    client.print(F("Host: "));
-    client.print(ip_string);
-    client.println();
-
-    client.println("Connection: close");
-
-    client.println();
-
-    delay(100);
-    while (client.available()) {
-      char c = client.read();
-      Serial.write(c);
-    }
-
-    // note the time that the connection was made
-    lastConnectionTime = millis();
-  } else {
-    // if you couldn't make a connection
-    Serial.println("Connection failed");
-  }
-}
-
-
-void printWifiStatus()
-{
-  // print the SSID of the network you're attached to
-  Serial.print("SSID: ");
-  Serial.println(WiFi.SSID());
-
-  // print your WiFi shield's IP address
-  IPAddress ip = WiFi.localIP();
-  Serial.print("IP Address: ");
-  Serial.println(ip);
-
-  // print the received signal strength
-  long rssi = WiFi.RSSI();
-  Serial.print("Signal strength (RSSI):");
-  Serial.print(rssi);
-  Serial.println(" dBm");
-}
-
